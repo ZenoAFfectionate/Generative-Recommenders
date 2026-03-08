@@ -5,23 +5,24 @@ from .layers import kmeans, sinkhorn_algorithm
 
 
 class VectorQuantizer(nn.Module):
+    """  """
 
-    def __init__(self, n_e, e_dim,
-                 beta = 0.25, kmeans_init = False, kmeans_iters = 10,
-                 sk_epsilon=0.003, sk_iters=100,):
+    def __init__(self, num_e, e_dim, beta = 0.25,
+                 kmeans_init = False, kmeans_iters = 10,
+                 sk_epsilon=0.003, sk_iters=100):
         super().__init__()
-        self.n_e = n_e
-        self.e_dim = e_dim
+        self.num_e = num_e  # number of embedding
+        self.e_dim = e_dim  # embedding dimension
         self.beta = beta
         self.kmeans_init = kmeans_init
         self.kmeans_iters = kmeans_iters
         self.sk_epsilon = sk_epsilon
         self.sk_iters = sk_iters
 
-        self.embedding = nn.Embedding(self.n_e, self.e_dim)
+        self.embedding = nn.Embedding(self.num_e, self.e_dim)
         if not kmeans_init:
             self.initted = True
-            self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
+            self.embedding.weight.data.uniform_(-1.0 / self.num_e, 1.0 / self.num_e)
         else:
             self.initted = False
             self.embedding.weight.data.zero_()
@@ -41,7 +42,7 @@ class VectorQuantizer(nn.Module):
 
         centers = kmeans(
             data,
-            self.n_e,
+            self.num_e,
             self.kmeans_iters,
         )
 
@@ -53,24 +54,23 @@ class VectorQuantizer(nn.Module):
         # distances: B, K
         max_distance = distances.max()
         min_distance = distances.min()
-
+        # compute centered distances
         middle = (max_distance + min_distance) / 2
         amplitude = max_distance - middle + 1e-5
         assert amplitude > 0
-        centered_distances = (distances - middle) / amplitude
-        return centered_distances
+        return (distances - middle) / amplitude
 
     def forward(self, x, use_sk=True):
-        # Flatten input
-        latent = x.view(-1, self.e_dim)
+        latent = x.view(-1, self.e_dim)  # flatten input
 
         if not self.initted and self.training:
             self.init_emb(latent)
 
-        # Calculate the L2 Norm between latent and Embedded weights
+        # calculate the L2 Norm between latent and Embedded weights
         d = torch.sum(latent**2, dim=1, keepdim=True) + \
             torch.sum(self.embedding.weight**2, dim=1, keepdim=True).t()- \
             2 * torch.matmul(latent, self.embedding.weight.t())
+        # 
         if not use_sk or self.sk_epsilon <= 0:
             indices = torch.argmin(d, dim=-1)
         else:
@@ -82,8 +82,7 @@ class VectorQuantizer(nn.Module):
                 print(f"Sinkhorn Algorithm returns nan/inf values.")
             indices = torch.argmax(Q, dim=-1)
 
-        # indices = torch.argmin(d, dim=-1)
-
+        # perform embedding to get x_q
         x_q = self.embedding(indices).view(x.shape)
 
         # compute loss for embedding
@@ -91,11 +90,8 @@ class VectorQuantizer(nn.Module):
         codebook_loss = F.mse_loss(x_q, x.detach())
         loss = codebook_loss + self.beta * commitment_loss
 
-        # preserve gradients
-        x_q = x + (x_q - x).detach()
+        x_q = x + (x_q - x).detach()  # preserve gradients
 
         indices = indices.view(x.shape[:-1])
 
         return x_q, loss, indices
-
-

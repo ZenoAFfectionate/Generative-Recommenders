@@ -1,7 +1,7 @@
 #!/bin/bash
+cd "$(dirname "$0")/.."
 
-
-PYTHON_SCRIPT="convert_dataset.py"
+PYTHON_SCRIPT="utils/convert_dataset.py"
 
 INPUT_DIR="data/Amazon18/Industrial_and_Scientific"
 

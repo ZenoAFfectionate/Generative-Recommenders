@@ -4,12 +4,14 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 import logging
 from torch.utils.data import DataLoader
 
-from datasets import EmbDataset
+from utils.datasets import EmbDataset
 from models.rqvae import RQVAE
-from trainer import Trainer
+from utils.rq_trainer import Trainer
 
 
 class ResidualEncoderWrapper(nn.Module):

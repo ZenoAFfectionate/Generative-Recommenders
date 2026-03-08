@@ -3,12 +3,14 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 import json
 import polars as pl
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from datasets import EmbDataset
+from utils.datasets import EmbDataset
 from models.rqvae import RQVAE
 
 

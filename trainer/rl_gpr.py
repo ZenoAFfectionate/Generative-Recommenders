@@ -3,12 +3,14 @@ from trl import GRPOConfig, GRPOTrainer
 import random
 import numpy as np
 import torch
-from data import D3Dataset, SidDataset, RLTitle2SidDataset, RLSeqTitle2SidDataset, RLSid2TitleDataset, RLSidhis2TitleDataset
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from utils.data import D3Dataset, SidDataset, RLTitle2SidDataset, RLSeqTitle2SidDataset, RLSid2TitleDataset, RLSidhis2TitleDataset
 from torch.utils.data import ConcatDataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import os
 from minionerec_trainer import ReReTrainer
-from sasrec import SASRec
+from model.sasrec import SASRec
 from fire import Fire
 import pickle
 import math

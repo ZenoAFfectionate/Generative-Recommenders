@@ -1,4 +1,5 @@
-python rqkmeans_plus.py \
+cd "$(dirname "$0")/.."
+python trainer/rqkmeans_plus.py \
   --data_path ../data/Amazon18/Industrial_and_Scientific/Industrial_and_Scientific.emb-qwen-td.npy \
   --pretrained_codebook_path ../data/Amazon18/Industrial_and_Scientific/Industrial_and_Scientific.codebooks_constrained.npz \
   --num_emb_list 256 256 256 \

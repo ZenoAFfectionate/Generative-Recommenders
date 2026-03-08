@@ -3,12 +3,14 @@ from trl import GRPOConfig, GRPOTrainer
 import random
 import numpy as np
 import torch
-from data import D3Dataset, SidDataset, RLTitle2SidDataset, RLSeqTitle2SidDataset, RLSid2TitleDataset, RLSidhis2TitleDataset
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from utils.data import D3Dataset, SidDataset, RLTitle2SidDataset, RLSeqTitle2SidDataset, RLSid2TitleDataset, RLSidhis2TitleDataset
 from torch.utils.data import ConcatDataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import os
 from minionerec_trainer import ReReTrainer
-from sasrec import SASRec
+from model.sasrec import SASRec
 from fire import Fire
 import pickle
 import math
@@ -66,9 +68,14 @@ def train(
     item_meta_path: str = "",
     dapo: bool = False,
     gspo: bool = False,
+    max_completion_length: int = 32,
 ):
-    torch.backends.cuda.enable_flash_sdp(False)  
-    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    # Flash SDP and memory-efficient SDP are enabled by default (PyTorch defaults)
+    # Force torch fallback for linear attention layers (fla Triton kernel bug on RTX 4090)
+    import transformers.models.qwen3_5.modeling_qwen3_5 as _qwen3_5_mod
+    _qwen3_5_mod.chunk_gated_delta_rule = None
+    _qwen3_5_mod.fused_recurrent_gated_delta_rule = None
+
     set_seed(seed)
     
     category_dict = {"Industrial_and_Scientific": "industrial and scientific items", "Office_Products": "office products", "Toys_and_Games": "toys and games", "Sports": "sports and outdoors", "Books": "books"}
@@ -133,8 +140,10 @@ def train(
     print("train_dataset: ", train_dataset)
     print("eval_dataset: ", eval_dataset)
 
-    llm_model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map="auto")
-    device = llm_model.device
+    # Only load model here for reward types that need device/embeddings
+    if reward_type in ("sasrec", "semantic"):
+        llm_model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, device_map="auto")
+        device = llm_model.device
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     
     len_seq = 10
@@ -150,8 +159,7 @@ def train(
         with open(ada_path, "rb") as f:
             item_ada_embd = pickle.load(f)
         item_ada_embd = torch.tensor(item_ada_embd).to(llm_model.device)
-
-    print("Load item_ada_embd successfully.")
+        print("Load item_ada_embd successfully.")
 
     ndcg_rewards = [-1.0/math.log2(i+2) for i in range(num_generations)]
     ndcg_rewards = [-elm/sum(ndcg_rewards) for elm in ndcg_rewards]
@@ -261,17 +269,19 @@ def train(
     os.environ["WANDB_MODE"] = "offline"
 
     training_args = GRPOConfig(output_dir=output_dir,
-                                save_steps=0.1,
-                                save_total_limit=20,
+                                save_steps=0.25,
+                                save_total_limit=5,
                                 eval_strategy="steps",
-                                max_completion_length=128,
+                                max_completion_length=max_completion_length,
                                 num_generations=num_generations,
                                 temperature=temperature,
                                 sync_ref_model=sync_ref_model,
                                 per_device_eval_batch_size=eval_batch_size,
                                 per_device_train_batch_size=train_batch_size,
-                                gradient_accumulation_steps=gradient_accumulation_steps,  
-                                eval_steps=eval_step, 
+                                gradient_accumulation_steps=gradient_accumulation_steps,
+                                gradient_checkpointing=True,
+                                gradient_checkpointing_kwargs={"use_reentrant": False},
+                                eval_steps=eval_step,
                                 logging_steps=1, 
                                 learning_rate=learning_rate,
                                 beta=beta,
@@ -279,7 +289,7 @@ def train(
                                 max_grad_norm= 0.3,
                                 num_train_epochs=num_train_epochs,
                                 bf16=True,
-                                optim="paged_adamw_32bit",
+                                optim="adamw_torch_fused",
                                 lr_scheduler_type="cosine", 
                                 save_strategy="steps",
                                 report_to="wandb",

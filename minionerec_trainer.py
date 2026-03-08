@@ -13,20 +13,20 @@
 # limitations under the License.
 
 import os
+import math
+import torch
 import textwrap
 import warnings
+import transformers
+from torch import nn
 from collections import defaultdict
 from typing import Any, Callable, Optional, Sized, Union
 from unittest.mock import patch
 
-import torch
-import torch.utils.data
-import transformers
 from accelerate.utils import broadcast_object_list, gather, gather_object, is_peft_model, set_seed
 from accelerate.utils.other import is_compiled_module
 from datasets import Dataset, IterableDataset
 from packaging import version
-from torch import nn
 from torch.utils.data import Sampler
 from transformers import (
     AutoModelForCausalLM,
@@ -49,8 +49,6 @@ from trl import SyncRefModelCallback
 from trl import GRPOConfig
 from trl.trainer.utils import generate_model_card, get_comet_experiment_url, pad, selective_log_softmax
 
-import random
-
 from transformers import (
         is_wandb_available, 
         AutoTokenizer, 
@@ -60,9 +58,7 @@ from transformers import (
         Trainer
     )
 
-from LogitProcessor import ConstrainedLogitsProcessor
-from transformers.generation import LogitsProcessor
-import math
+from model.LogitProcessor import ConstrainedLogitsProcessor, SIDTrie
 
 if is_peft_available():
     from peft import PeftConfig, get_peft_model
@@ -359,7 +355,8 @@ class ReReTrainer(Trainer):
         # "Could not estimate the number of tokens of the input, floating-point operations will not be computed." To
         # suppress this warning, we set the "estimate_tokens" key in the model's "warnings_issued" dictionary to True.
         # This acts as a flag to indicate that the warning has already been issued.
-        model.warnings_issued["estimate_tokens"] = True
+        if hasattr(model, "warnings_issued"):
+            model.warnings_issued["estimate_tokens"] = True
 
         # Initialize the metrics
         self._metrics = defaultdict(list)   
@@ -553,23 +550,14 @@ class ReReTrainer(Trainer):
             prefix_index = 4
         else:
             prefix_index = 3
+        # Dynamically compute prefix_index from actual tokenization
+        prefix_index = len(tokenizer("### Response:\n").input_ids)
+        self._prefix_index = prefix_index
             
-        self.hash_dict = dict()
-        # sasrec_dict = dict()
-        for index, ID in enumerate(prefixID):
+        self.sid_trie = SIDTrie()
+        for ID in prefixID:
             ID.append(tokenizer.eos_token_id)
-            for i in range(prefix_index, len(ID)):
-                if i == prefix_index:
-                    hash_number = self.get_hash(ID[:i])
-                else:
-                    hash_number = self.get_hash(ID[prefix_index:i])
-                if hash_number not in self.hash_dict:
-                    self.hash_dict[hash_number] = set()
-                    # sasrec_dict[hash_number] = set()
-                self.hash_dict[hash_number].add(ID[i])
-
-        for key in self.hash_dict.keys():
-            self.hash_dict[key] = list(self.hash_dict[key])
+            self.sid_trie.insert(ID[prefix_index:])  # SID tokens + EOS only
 
         self.test_generation_config = GenerationConfig(max_new_tokens=self.max_completion_length,
                                                             length_penalty=self.length_penalty,
@@ -579,15 +567,16 @@ class ReReTrainer(Trainer):
                                                             pad_token_id=self.processing_class.pad_token_id,
                                                             eos_token_id=self.processing_class.eos_token_id,)
 
-    def get_hash(self, x):
-            x = [str(_) for _ in x]
-            return '-'.join(x)
+        # Create ConstrainedLogitsProcessor once; reset count before each use
+        self._constrained_lp = ConstrainedLogitsProcessor(
+            prefix_allowed_tokens_fn=self.prefix_allowed_tokens_fn,
+            num_beams=self.num_generations if self.beam_search else 1,
+            prefix_index=self._prefix_index,
+            eos_token_id=self.processing_class.eos_token_id
+        )
 
     def prefix_allowed_tokens_fn(self, batch_id, input_ids):
-            hash_number = self.get_hash(input_ids)
-            if hash_number in self.hash_dict:
-                return self.hash_dict[hash_number]
-            return []
+            return self.sid_trie.get_valid_tokens(input_ids)
     
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -684,18 +673,12 @@ class ReReTrainer(Trainer):
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
 
-        ccc = ConstrainedLogitsProcessor(
-                # guidance_scale=1.0,
-                # cf_logits=None,
-                prefix_allowed_tokens_fn=self.prefix_allowed_tokens_fn,
-                # cf_dict=sasrec_dict,
-                # unconditional_ids=None,
-                num_beams=self.num_generations if self.beam_search else 1,
-                base_model=self.base_model,
-                eos_token_id=self.processing_class.eos_token_id
-            )
-        self.logits_processor = LogitsProcessorList([TemperatureLogitsWarper(temperature=self.temperature), ccc])
-        self.test_lp_list = LogitsProcessorList([ccc])
+        # Reset the reusable ConstrainedLogitsProcessor for this step
+        self._constrained_lp.count = 0
+        self._constrained_lp._warned = False
+        self._constrained_lp._cached_mask = None
+        self.logits_processor = LogitsProcessorList([TemperatureLogitsWarper(temperature=self.temperature), self._constrained_lp])
+        self.test_lp_list = LogitsProcessorList([self._constrained_lp])
 
         # Generate completions using either vLLM or regular generation
         if self.args.use_vllm:

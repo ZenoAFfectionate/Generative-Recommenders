@@ -1,6 +1,4 @@
 import argparse
-import collections
-import json
 import os
 import random
 import torch
@@ -10,6 +8,7 @@ from utils import *
 from transformers import AutoTokenizer, AutoModel
 from accelerate import Accelerator
 from accelerate.utils import gather_object
+
 
 def load_data(args):
     if args.root:
@@ -156,19 +155,18 @@ def load_qwen_model(model_path):
     )
     return tokenizer, model
 
-def parse_args():
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--dataset', type=str, default='Beauty', help='Beauty / Sports / Toys')
     parser.add_argument('--root', type=str, default="")
-    # parser.add_argument('--gpu_id', type=int, default=0) 
+    # parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--plm_name', type=str, default='qwen')
     parser.add_argument('--plm_checkpoint', type=str, default='xxx', help='Qwen model path')
     parser.add_argument('--max_sent_len', type=int, default=2048)
     parser.add_argument('--word_drop_ratio', type=float, default=-1, help='word drop ratio')
-    return parser.parse_args()
-
-if __name__ == '__main__':
-    args = parse_args()
+    args = parser.parse_args()
 
     accelerator = Accelerator()
     

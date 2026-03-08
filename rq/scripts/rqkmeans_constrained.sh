@@ -2,6 +2,7 @@
 #
 # RQ-KMeans Constrained Training Script
 #
+cd "$(dirname "$0")/.."
 
 # Default parameters
 DATASET="Industrial_and_Scientific"
@@ -27,7 +28,7 @@ done
 echo "Dataset: $DATASET"
 echo "K=$K, L=$L"
 
-python rqkmeans_constrained.py \
+python trainer/rqkmeans_constrained.py \
     --dataset "$DATASET" \
     --root "$ROOT" \
     --k "$K" \

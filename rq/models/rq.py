@@ -5,7 +5,8 @@ from .vq import VectorQuantizer
 
 
 class ResidualVectorQuantizer(nn.Module):
-    """ References:
+    """ 
+    References:
         SoundStream: An End-to-End Neural Audio Codec
         https://arxiv.org/pdf/2107.03312.pdf
     """
@@ -21,13 +22,15 @@ class ResidualVectorQuantizer(nn.Module):
         self.kmeans_iters = kmeans_iters
         self.sk_epsilons = sk_epsilons
         self.sk_iters = sk_iters
-        self.vq_layers = nn.ModuleList([VectorQuantizer(n_e, e_dim,
-                                                        beta=self.beta,
-                                                        kmeans_init = self.kmeans_init,
-                                                        kmeans_iters = self.kmeans_iters,
-                                                        sk_epsilon=sk_epsilon,
-                                                        sk_iters=sk_iters)
-                                        for n_e, sk_epsilon in zip(n_e_list,sk_epsilons) ])
+        self.vq_layers = nn.ModuleList(
+            [VectorQuantizer(n_e, e_dim,
+                             beta=self.beta,
+                             kmeans_init = self.kmeans_init,
+                             kmeans_iters = self.kmeans_iters,
+                             sk_epsilon=sk_epsilon,
+                             sk_iters=sk_iters)
+                                for n_e, sk_epsilon in zip(n_e_list,sk_epsilons)]
+        )
 
     def get_codebook(self):
         all_codebook = []
@@ -37,7 +40,7 @@ class ResidualVectorQuantizer(nn.Module):
         return torch.stack(all_codebook)
 
     def forward(self, x, use_sk=True):
-        all_losses = []
+        all_losses  = []
         all_indices = []
 
         x_q = 0

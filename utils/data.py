@@ -7,7 +7,6 @@ import json
 import random
 from tqdm import tqdm
 import os
-import copy
 import torch.nn.functional as F
 
 class Tokenizer:
@@ -134,14 +133,8 @@ class SFTData(CSVBaseDataset):
 
     def get_history(self, row):
         row['history_item_title'] = eval(row['history_item_title'])
-        L = len(row['history_item_title']) 
-        history = ""
         history_str = "::".join(row["history_item_title"])
-        for i in range(L):
-            if i == 0:
-                history += "\"" + row['history_item_title'][i] + "\""
-            else:
-                history += ",\t\"" + row['history_item_title'][i] + "\""      
+        history = ",\t".join('"' + t + '"' for t in row['history_item_title'])
         target_item = str(row['item_title'])
         target_item = "\"" + target_item + "\"\n"
         target_item_id = row["item_id"]
@@ -162,7 +155,7 @@ class SFTData(CSVBaseDataset):
         history = self.get_history(self.data.iloc[idx])
         target_item = history['output']
         history['output'] = ''
-        negative_prompt_ids = copy.deepcopy(tokens)
+
         
                 
            
@@ -222,14 +215,8 @@ class D3Dataset(CSVBaseDataset):
 
     def get_history(self, row):
         row['history_item_title'] = eval(row['history_item_title'])
-        L = len(row['history_item_title']) 
-        history = ""
         history_str = "::".join(row["history_item_title"])
-        for i in range(L):
-            if i == 0:
-                history += "\"" + row['history_item_title'][i] + "\""
-            else:
-                history += ",\t\"" + row['history_item_title'][i] + "\""      
+        history = ",\t".join('"' + t + '"' for t in row['history_item_title'])
         target_item = str(row['item_title'])
         target_item = "\"" + target_item + "\"\n"
         target_item_id = row["item_id"]
@@ -287,13 +274,7 @@ class EvalD3Dataset(CSVBaseDataset):
 """
     def get_history(self, row):
         row['history_item_title'] = eval(row['history_item_title'])
-        L = len(row['history_item_title']) 
-        history = ""
-        for i in range(L):
-            if i == 0:
-                history += "\"" + row['history_item_title'][i] + "\""
-            else:
-                history += ",\t\"" + row['history_item_title'][i] + "\""      
+        history = ",\t".join('"' + t + '"' for t in row['history_item_title'])
         target_item = str(row['item_title'])
         target_item = "\"" + target_item + "\""
         target_item_id = row["item_id"]
@@ -313,7 +294,7 @@ class EvalD3Dataset(CSVBaseDataset):
         history = self.get_history(self.data.iloc[idx])
         target_item = history['output']
         history['output'] = ''
-        negative_prompt_ids = copy.deepcopy(tokens)
+
         
                 
            
@@ -360,24 +341,18 @@ class SidDataset(CSVBaseDataset):
         self.get_inputs()  
 
     def get_history(self, row):
-        row['history_item_sid'] = eval(row['history_item_sid'])
-        L = len(row['history_item_sid']) 
-        history = ""
-        history_str = "::".join(row["history_item_sid"])
-        for i in range(L):
-            if i == 0:
-                history += row['history_item_sid'][i]
-            else:
-                history += ", " + row['history_item_sid'][i]      
+        history_item_sid = eval(row['history_item_sid'])
+        history = ", ".join(history_item_sid)
+        history_str = "::".join(history_item_sid)
         target_item = str(row['item_sid'])
         target_item_sid = row["item_sid"]
-        last_history_item_sid = row['history_item_sid'][-1] if row['history_item_sid'] else None
+        last_history_item_sid = history_item_sid[-1] if history_item_sid else None
         return {"input": f"The user has interacted with items {history} in chronological order. Can you predict the next possible item that the user may expect?",
                 # Analyze user preferences and then predict the semantic ID of the next item.
                 "output": target_item + "\n",
                 "history_str": history_str,
                 "dedup": target_item_sid == last_history_item_sid}
-    
+
     def pre(self, idx):
         history = self.get_history(self.data.iloc[idx])
         target_item = history['output']
@@ -401,25 +376,19 @@ class SidSFTDataset(CSVBaseDataset):
         self.get_inputs()
 
     def get_history(self, row):
-        row['history_item_sid'] = eval(row['history_item_sid'])
-        L = len(row['history_item_sid']) 
-        history = ""
-        history_str = ", ".join(row["history_item_sid"])
-        for i in range(L):
-            if i == 0:
-                history += row['history_item_sid'][i]
-            else:
-                history += ", " + row['history_item_sid'][i]      
+        history_item_sid = eval(row['history_item_sid'])
+        history = ", ".join(history_item_sid)
+        history_str = ", ".join(history_item_sid)
         target_item = str(row['item_sid'])
         target_item_sid = row["item_sid"]
-        last_history_item_sid = row['history_item_sid'][-1] if row['history_item_sid'] else None
+        last_history_item_sid = history_item_sid[-1] if history_item_sid else None
         return {"input": f"The user has interacted with items {history} in chronological order. Can you predict the next possible item that the user may expect?",
                 "output": target_item + "\n",
                 "history_str": history_str,
                 "dedup": target_item_sid == last_history_item_sid}
-    
+
     def pre(self, idx):
-        instruction = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
+        instruction = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 
 ### Instruction:
 Can you predict the next possible item that the user may expect?
@@ -432,7 +401,7 @@ Can you predict the next possible item that the user may expect?
         # print("history: ", history)
         target_item = history['output']
         history['output'] = ''
-        negative_prompt_ids = copy.deepcopy(tokens)
+
         
         prompt = self.generate_prompt(history)
         # print("prompt: ", prompt)
@@ -492,32 +461,26 @@ class SidSFTDataset_GPR(CSVBaseDataset):
         self.get_inputs()  
 
     def get_history(self, row):
-        row['history_item_sid'] = eval(row['history_item_sid'])
-        L = len(row['history_item_sid']) 
-        history = ""
-        history_str = ", ".join(row["history_item_sid"])
-        for i in range(L):
-            if i == 0:
-                history += row['history_item_sid'][i]
-            else:
-                history += ", " + row['history_item_sid'][i]      
+        history_item_sid = eval(row['history_item_sid'])
+        history = ", ".join(history_item_sid)
+        history_str = ", ".join(history_item_sid)
         target_item = str(row['item_sid'])
         target_item_sid = row["item_sid"]
-        last_history_item_sid = row['history_item_sid'][-1] if row['history_item_sid'] else None
+        last_history_item_sid = history_item_sid[-1] if history_item_sid else None
         return {"input": f"The user has interacted with items {history} in chronological order. Can you predict the next possible item that the user may expect?",
                 "output": target_item + "\n",
                 "history_str": history_str,
                 "dedup": target_item_sid == last_history_item_sid}
-    
+
     def pre(self, idx):
-        instruction = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
+        instruction = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
 
 ### Instruction:
 Can you predict the next possible item that the user may expect?
 
 """
         tokens = self.tokenizer.encode(instruction, bos=True, eos=False)
-        
+
         row = self.data.iloc[idx]
         
         # Heterogeneous Prompt Construction
@@ -558,7 +521,7 @@ Can you predict the next possible item that the user may expect?
         
         target_item = history['output']
         history['output'] = ''
-        negative_prompt_ids = copy.deepcopy(tokens)
+
         
         prompt = self.generate_prompt(history)
 
@@ -609,17 +572,11 @@ class EvalSidDataset(CSVBaseDataset):
 """
 
     def get_history(self, row):
-        row['history_item_sid'] = eval(row['history_item_sid'])
-        L = len(row['history_item_sid']) 
-        history = ""
-        for i in range(L):
-            if i == 0:
-                history += row['history_item_sid'][i]
-            else:
-                history += ", " + row['history_item_sid'][i]      
+        history_item_sid = eval(row['history_item_sid'])
+        history = ", ".join(history_item_sid)
         target_item = str(row['item_sid'])
         target_item_sid = row["item_sid"]
-        last_history_item_sid = row['history_item_sid'][-1] if row['history_item_sid'] else None
+        last_history_item_sid = history_item_sid[-1] if history_item_sid else None
         return {"input": # f"The user has interacted with items {history} in chronological order. Can you predict the next possible item that the user may expect?",
                 f"Can you predict the next possible item the user may expect, given the following chronological interaction history: {history}",
                 "output": target_item + '\n',
@@ -638,7 +595,7 @@ Can you predict the next possible item that the user may expect?
         history = self.get_history(self.data.iloc[idx])
         target_item = history['output']
         history['output'] = ''
-        negative_prompt_ids = copy.deepcopy(tokens)
+
         
                 
            
@@ -1075,25 +1032,19 @@ class RLSidhis2TitleDataset(BaseDataset):
         self.get_inputs()
 
     def get_history(self, row):
-        row['history_item_sid'] = eval(row['history_item_sid'])
-        L = len(row['history_item_sid']) 
-        history = ""
-        history_str = "::".join(row["history_item_sid"])
-        for i in range(L):
-            if i == 0:
-                history += row['history_item_sid'][i]
-            else:
-                history += ", " + row['history_item_sid'][i]      
-        
+        history_item_sid = eval(row['history_item_sid'])
+        history = ", ".join(history_item_sid)
+        history_str = "::".join(history_item_sid)
+
         # Get target item title from item_id
         target_item_id = str(row['item_id'])
         if target_item_id in self.id2title:
             target_title = self.id2title[target_item_id]
         else:
             target_title = f"Unknown item {target_item_id}"
-        
+
         target_item_sid = row["item_sid"]
-        last_history_item_sid = row['history_item_sid'][-1] if row['history_item_sid'] else None
+        last_history_item_sid = history_item_sid[-1] if history_item_sid else None
         
         return {
             "input": f"The user has interacted with items {history} in chronological order. Can you predict the title of the next item that the user may expect? Analyze user preferences and then predict the title of the next item.",

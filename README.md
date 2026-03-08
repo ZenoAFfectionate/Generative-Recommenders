@@ -19,11 +19,11 @@ Scaling Generative Recommendation**
 
 ## 📢 Announcement
 
-- 2026-01-04 — Regarding the potential discrepancies between the reproduced results based on the Instruct model and our reported metrics, please check whether the CC metric in the evaluation log is non-zero (refer to calc.py). If it is non-zero, it indicates that the model is still generating a large number of invalid items, and constrained decoding has not been successful. We suspect this issue may be related to the versions of dependencies such as the transformer library, and we are still investigating the cause to provide a universal solution. In the meantime, you may switch the Instruct model to a base model, such as Qwen2.5-base, to avoid this problem.
+- 2026-01-04 — Regarding the potential discrepancies between the reproduced results based on the Instruct model and our reported metrics, please check whether the CC metric in the evaluation log is non-zero (refer to utils/calc.py). If it is non-zero, it indicates that the model is still generating a large number of invalid items, and constrained decoding has not been successful. We suspect this issue may be related to the versions of dependencies such as the transformer library, and we are still investigating the cause to provide a universal solution. In the meantime, you may switch the Instruct model to a base model, such as Qwen2.5-base, to avoid this problem.
 
 - 2025-12-04 — We update new scripts to support processing the Amazon23 dataset.
 
-- 2025-12-01 — We fix a bug in data.py that could cause the SID–item alignment task to see the answers in advance. This was because we had previously attempted to use partial trajectories to guide the full SID–item generation and does not affect the model performance.
+- 2025-12-01 — We fix a bug in utils/data.py that could cause the SID–item alignment task to see the answers in advance. This was because we had previously attempted to use partial trajectories to guide the full SID–item generation and does not affect the model performance.
 
 - 2025-11-20 — The SID construction method in **RQ-Kmeans+** has been updated (first proposed in **GPR** and this is the first open-source reproduction).
 
@@ -57,48 +57,58 @@ Scaling Generative Recommendation**
 ## 📊 Evaluation
 
 <div align="center">
-<img src="./assets/minionerec_main_result.png" width=100% ></img> 
+<img src="./assets/minionerec_main_result.png" width=100% ></img>
 </div>
 
----
+### Reproduction Results (Industrial_and_Scientific, Qwen3.5-2B)
 
-## 🗂️ Repository Overview
+#### Accuracy Metrics
 
-| File / Directory          | Description                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `sft.sh`                  | Shell script to start the Supervised Fine-Tuning (SFT) stage                                           |
-| `sft.py`                  | Python implementation of the SFT training loop                                                            |
-| `sft_gpr.py`              | GPR-inspired SFT with Value-Aware Fine-Tuning (VAFT): implements weighted loss based on simulated item value                            |
-| `rl.sh`                   | Shell script to start the Reinforcement Learning (RL) stage                             |
-| `rl.py`                   | Python implementation of the RL training loop                                              |
-| `rl_gpr.py`               | GPR-inspired RL with Hierarchy Enhanced Policy Optimization (HEPO)                                                 |
-| `minionerec_trainer.py`   | MiniOneRec trainer — GRPO-based trainer specialized for generative recommendation                              |
-| `configs/`                | YAML configuration files                                            |
-| `evaluate.sh`     | One-click offline Top-K evaluation script                                                        |
-| `evaluate.py`     | Evaluation utilities for computing HR@K and NDCG@K.                                                           |
-| `LogitProcessor.py`                | Logit processor for constrained decoding (Python implementation)                                         |
-| `data.py`                | Data pipeline for SFT and RL training                          |
-| `convert_dataset.py`                | Converts an RQ-trained dataset to the SFT-then-RL format                                            |
-| `convert_dataset_gpr.py`           | GPR-inspired dataset converter: injects simulated heterogeneous tokens (U/E/I/O) to emulate unified input representation                                         |
-| `data/amazon18_data_process.sh`                |    Shell script to filter and preprocess Amazon18 data into an RQ-ready format                                      |
-| `data/amazon18_data_process.py`                |   Python implementation of the Amazon18 data preprocessing pipeline                                        |
-| `data/amazon18_data_process_gpr.py`            |   GPR-inspired Amazon18 preprocessing: extracts heterogeneous features for unified input representation                         |
-| `data/amazon23_data_process.sh`                |    Shell script to filter and preprocess Amazon23 data into an RQ-ready format                                      |
-| `data/amazon23_data_process.py`                |   Python implementation of the Amazon23 data preprocessing pipeline                                        |
-| `rq/text2emb/amazon_text2emb.sh`                |   Shell script to generate item embeddings (title + description) via emb_model for the Amazon dataset                                   |
-| `rq/text2emb/amazon_text2emb.py`                |   Python implementation of the above embedding generation                                         |
-| `rq/text2emb/amazon_text2emb_gpr.py`           |   GPR-inspired text-to-embedding                                 |
-| `rq/generate_indices.py`                |   Generates the SID file after training an RQ-VAE model                                       |
-| `rq/rqvae.sh`                |   Shell script to train RQ-VAE on Amazon item embeddings                        |
-| `rq/rqvae.py`                |   Python implementation of RQ-VAE training                                            |
-| `rq/rqkmeans_faiss.py`                |   Python implementation of RQ-Kmeans training based on faiss                                          |
-| `rq/rqkmeans_constrained.py`                |   Python implementation of Constrained RQ-Kmeans                         |
-| `rq/rqkmeans_constrained.sh`                |   Shell script to train constrained RQ-Kmeans constrained on Amazon item embeddings                        |
-| `rq/rqkmeans_plus.py`                |   Python implementation of RQ-Kmeans+                        |
-| `rq/rqkmeans_plus.sh`                |   Shell script to train RQ-Kmeans+ constrained on Amazon item embeddings                        |
-| `rq/generate_indices_plus.py`                |   Generates the SID file after training an RQ-Kmeans+ model                                       |
-| `rq/generate_indices_plus.sh`                |   Shell script to generate the SID file after training an RQ-Kmeans+ model                                       |
-| `requirements.txt`        | List of Python dependencies                                                                                |
+| Stage | HR@1 | HR@5 | HR@10 | HR@50 | NDCG@5 | NDCG@10 | NDCG@50 | MRR@10 | MRR@50 |
+|-------|------|------|-------|-------|--------|---------|---------|--------|--------|
+| Base Model (no SFT) | 1.96% | 5.56% | 8.43% | 16.48% | 3.89% | 4.79% | 6.64% | 3.69% | 4.12% |
+| SFT | 4.06% | 8.07% | 10.41% | 18.44% | 6.18% | 6.94% | 8.70% | 5.86% | 6.24% |
+| RL | — | — | — | — | — | — | — | — | — |
+
+#### Diversity Metrics
+
+| Stage | Coverage@10 | Coverage@50 | ILS@10 | Entropy@10 | Entropy@50 |
+|-------|-------------|-------------|--------|------------|------------|
+| Base Model (no SFT) | 96.66% | 98.78% | 0.2000 | 11.0007 | 10.8147 |
+| SFT | 66.58% | 89.69% | 0.1358 | 9.6386 | 10.3452 |
+| RL | — | — | — | — | — |
+
+#### Fairness Metrics
+
+| Stage | Gini@10 | Gini@50 | LongTail-Cov@10 | LongTail-Cov@50 |
+|-------|---------|---------|------------------|-----------------|
+| Base Model (no SFT) | 0.5251 | 0.6193 | 96.06% | 98.94% |
+| SFT | 0.7175 | 0.6908 | 56.76% | 86.53% |
+| RL | — | — | — | — |
+
+#### Novelty Metrics
+
+| Stage | Novelty@10 | Novelty@50 |
+|-------|------------|------------|
+| Base Model (no SFT) | 12.2791 | 12.6547 |
+| SFT | 11.1337 | 11.4989 |
+| RL | — | — |
+
+> Max possible entropy: 11.8478 | Long-tail items: 1878 (threshold: pop <= 0.000162) | Novelty = Mean Self-Information in bits (higher = more novel)
+
+#### Analysis: Base Model vs. SFT
+
+SFT yields substantial accuracy gains across all metrics, with the most pronounced improvements at small K values (HR@1: +107%, NDCG@5: +59%, MRR@10: +59%), indicating that the model learns to rank the ground-truth item significantly higher after fine-tuning.
+
+However, a classic **accuracy–diversity trade-off** is observed: Coverage@10 drops from 96.66% to 66.58%, Entropy@10 decreases by ~1.4 bits, the Gini coefficient rises from 0.5251 to 0.7175, and LongTail-Cov@10 falls sharply from 96.06% to 56.76%. This is expected — the base model produces near-uniform predictions over the item space, while SFT concentrates probability mass on a smaller set of popular items.
+
+Novelty also decreases (12.28 → 11.13 bits at @10), confirming that SFT shifts recommendations toward more commonly interacted items.
+
+**Takeaway:** SFT is effective at improving recommendation accuracy but introduces popularity bias and reduces diversity. This motivates the subsequent **RL stage (GRPO)**, which is designed to recover diversity and fairness while maintaining accuracy gains.
+
+#### Analysis: SFT vs. RL (TODO)
+
+> *RL results pending. Expected effects: further accuracy improvement with partial recovery of diversity and long-tail coverage, driven by the ranking reward and constrained beam search in GRPO.*
 
 ---
 
@@ -123,19 +133,19 @@ pip install -r requirements.txt
 ### 3. SFT
 
 ```bash
-bash sft.sh
+bash scripts/sft.sh
 ```
 
 ### 4. Recommendation-Oriented RL
 
 ```bash
-bash rl.sh
+bash scripts/rl.sh
 ```
 
 ### 5. Run the evaluation bash
 
 ```bash
-bash evaluate.sh
+bash scripts/evaluate.sh
 ```
 
 ---
@@ -184,7 +194,7 @@ bash data/amazon18_data_process.sh \
 ```
 - **2.3 Encode item text to embeddings**
 ```
-bash rq/amazon_text2emb.sh \
+bash rq/text2emb/amazon_text2emb.sh \
      --dataset your_dataset_type \ # e.g., Industrial 
      --root your_processed_dataset_path \
      --plm_name qwen \
@@ -197,7 +207,7 @@ Choose either 3.1.1, 3.1.2, 3.1.3 or 3.1.4.
 
 - **3.1.1 Train RQ-VAE on the embeddings**
 ```
-bash rq/rqvae.sh \
+bash rq/scripts/rqvae.sh \
       --data_path xxx/data/Industrial_and_Scientific/Industrial_and_Scientific.emb-qwen-td.npy \
       --ckpt_dir ./output/Industrial_and_Scientific \
       --lr 1e-3 \
@@ -209,7 +219,7 @@ bash rq/rqvae.sh \
 
 ```
 conda install faiss-gpu
-python rqkmeans_faiss.py --dataset Industrial_and_Scientific # The RQ-Kmeans method based on semantic embeddings has a relatively high collision rate.
+python rq/trainer/rqkmeans_faiss.py --dataset Industrial_and_Scientific # The RQ-Kmeans method based on semantic embeddings has a relatively high collision rate.
 ```
 
 - **3.1.3 Train constrained RQ-Kmeans on the embeddings**
@@ -217,27 +227,27 @@ For conflicting items, we add an extra layer to perform deduplication; meanwhile
 ```
 pip install k_means_constrained
 pip install polars
-bash rqkmeans_constrained.sh
+bash rq/scripts/rqkmeans_constrained.sh
 ```
 
 - **3.1.4 Train RQ-Kmeans+ on the embeddings**
 ```
 pip install k_means_constrained
 pip install polars
-bash rqkmeans_constrained.sh
-bash rqkmeans_plus.sh
+bash rq/scripts/rqkmeans_constrained.sh
+bash rq/scripts/rqkmeans_plus.sh
 ```
 
 - **3.2 Generate indices(only RQ-VAE & RQ-Kmeans+ needed)**
 ```
-python rq/generate_indices.py
+python rq/trainer/generate_indices.py
 # or
-bash rq/generate_indices_plus.sh
+bash rq/scripts/generate_indices_plus.sh
 ```
 
 - **3.3 Convert dataset format**
 ```
-python convert_dataset.py \
+python utils/convert_dataset.py \
      --dataset_name Industrial_and_Scientific \
      --data_dir /path/to/Industrial_and_Scientific \
      --output_dir /path/to/ourput_dir \
@@ -246,28 +256,113 @@ python convert_dataset.py \
 
 ### 4. SFT
 
+Edit `scripts/sft.sh` to set your category and base model, then run:
+```bash
+bash scripts/sft.sh
 ```
-bash sft.sh \
-     --base_model your_model_path \
-     --output_dir your_ourput_dir \
-     --sid_index_path your_.index.json_path \
-     --item_meta_path your_.item.json_path
+
+The key parameters inside the script:
+```bash
+CUDA_VISIBLE_DEVICES=0 python trainer/sft.py \
+    --base_model Qwen/Qwen3.5-2B \
+    --batch_size 128 \
+    --micro_batch_size 16 \
+    --train_file ${train_file} \
+    --eval_file ${eval_file} \
+    --output_dir ./output/sft/${category} \
+    --wandb_project MiniOneRec \
+    --wandb_run_name sft_${category}_qwen3.5-2b \
+    --category ${category} \
+    --train_from_scratch False \
+    --seed 42 \
+    --sid_index_path ./data/Amazon/index/${category}.index.json \
+    --item_meta_path ./data/Amazon/index/${category}.item.json \
+    --freeze_LLM False
 ```
+
+| Parameter | Description |
+|-----------|-------------|
+| `base_model` | HuggingFace model name or local path |
+| `batch_size` / `micro_batch_size` | Total batch size and per-device batch size (gradient accumulation = batch_size / micro_batch_size) |
+| `sid_index_path` | Path to `.index.json` generated by SID construction |
+| `item_meta_path` | Path to `.item.json` containing item metadata |
+| `freeze_LLM` | If `True`, freeze all LLM parameters and only train new SID token embeddings |
+| `train_from_scratch` | If `True`, initialize model weights randomly instead of loading pretrained weights |
 
 ### 5. Recommendation-Oriented RL
 > (Optional) For production-scale datasets, considering the cost of reinforcement learning and diminishing marginal returns, you can perform the RL stage using only a relatively small subset on the order of tens of thousands of samples.
+
+Edit `scripts/rl.sh` to set your category and model path, then run:
+```bash
+bash scripts/rl.sh
 ```
-bash rl.sh \
-     --model_path your_model_path \
-     --output_dir output_dir \
+
+The key parameters inside the script:
+```bash
+CUDA_VISIBLE_DEVICES=0 python trainer/rl.py \
+    --model_path ./output/sft/${category} \
+    --train_batch_size 8 \
+    --eval_batch_size 16 \
+    --num_train_epochs 2 \
+    --gradient_accumulation_steps 4 \
+    --train_file ${train_file} \
+    --eval_file ${eval_file} \
+    --info_file ${info_file} \
+    --category ${category} \
+    --reward_type ranking \
+    --num_generations 16 \
+    --sync_ref_model True \
+    --beam_search True \
+    --temperature 1.0 \
+    --learning_rate 1e-5 \
+    --beta 1e-3 \
+    --output_dir ./output/rl/${category} \
+    --wandb_run_name rl_${category}_qwen3.5-2b \
+    --sid_index_path ./data/Amazon/index/${category}.index.json \
+    --item_meta_path ./data/Amazon/index/${category}.item.json
 ```
+
+| Parameter | Description |
+|-----------|-------------|
+| `model_path` | Path to the SFT checkpoint (e.g. `./output/sft/${category}`) |
+| `reward_type` | Reward function: `rule` (binary), `ranking` (rule + NDCG-aware), `sasrec` (CF-based), `semantic` (embedding similarity) |
+| `num_generations` | Number of candidate completions per prompt in GRPO |
+| `beam_search` | Use constrained beam search for generating valid SIDs |
+| `sync_ref_model` | Periodically sync the reference model with the policy model |
+| `beta` | KL penalty coefficient |
 
 ### 6. Offline Evaluation
 
+Edit `scripts/evaluate.sh` to set `exp_name` (model path) and category, then run:
+```bash
+bash scripts/evaluate.sh
 ```
-bash evaluate.sh \
-     --exp_name your_model_path 
+
+The key parameters inside the script:
+```bash
+CUDA_VISIBLE_DEVICES=0 python -u ./evaluate.py \
+    --base_model "$exp_name" \
+    --info_file "$info_file" \
+    --category ${category} \
+    --test_data_path "$test_file" \
+    --result_json_data "$result_dir/result_${category}.json" \
+    --batch_size 4 \
+    --num_beams 50 \
+    --max_new_tokens 256 \
+    --length_penalty 0.0
+
+# Calculate metrics
+python ./utils/calc.py \
+    --path "$result_dir/result_${category}.json" \
+    --item_path "$info_file"
 ```
+
+| Parameter | Description |
+|-----------|-------------|
+| `exp_name` | Path to model checkpoint (SFT or RL output) |
+| `num_beams` | Number of beams for constrained beam search (Top-K) |
+| `batch_size` | Evaluation batch size (reduce if OOM) |
+| `max_new_tokens` | Maximum generated tokens per sample |
 
 ---
 

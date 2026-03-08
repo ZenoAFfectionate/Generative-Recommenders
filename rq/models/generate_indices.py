@@ -9,11 +9,12 @@ from torch import optim
 from tqdm import tqdm
 
 from torch.utils.data import DataLoader
-
-from datasets import EmbDataset
-from models.rqvae import RQVAE
-
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
+from utils.datasets import EmbDataset
+from models.rqvae import RQVAE
 
 def check_collision(all_indices_str):
     tot_item = len(all_indices_str)

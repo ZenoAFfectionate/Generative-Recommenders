@@ -5,8 +5,8 @@ import torch
 import json
 import os
 from transformers import GenerationConfig,  AutoTokenizer, BitsAndBytesConfig, AutoModelForCausalLM, LogitsProcessorList, TemperatureLogitsWarper
-from data import  EvalD3Dataset, EvalSidDataset
-from LogitProcessor import ConstrainedLogitsProcessor
+from utils.data import  EvalD3Dataset, EvalSidDataset
+from model.LogitProcessor import ConstrainedLogitsProcessor
 from accelerate import Accelerator
 import random
 import bitsandbytes as bnb
@@ -22,8 +22,7 @@ MOD = int(1e9 + 9)
 import numpy as np
 
 def get_hash(x):
-    x = [str(_) for _ in x]
-    return '-'.join(x)
+    return tuple(x)
 
 def set_seed(seed):
     random.seed(seed)
@@ -51,12 +50,18 @@ def main(
 ):
     random.seed(seed)
     set_seed(seed)
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # GPU selection is controlled by CUDA_VISIBLE_DEVICES from the command line
     category_dict = {"Industrial_and_Scientific": "industrial and scientific items", "Office_Products": "office products", "Toys_and_Games": "toys and games", "Sports": "sports and outdoors", "Books": "books"}
     category = category_dict[category]
     print(category)
 
-    model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch.bfloat16, device_map="auto")
+    # Force torch fallback for linear attention layers (fla Triton kernel bug on RTX 4090)
+    import transformers.models.qwen3_5.modeling_qwen3_5 as _qwen3_5_mod
+    _qwen3_5_mod.chunk_gated_delta_rule = None
+    _qwen3_5_mod.fused_recurrent_gated_delta_rule = None
+
+    model = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16, device_map="auto")
+    model.config.use_cache = True
     model.eval()
     with open(info_file, 'r') as f:
         info = f.readlines()
@@ -82,54 +87,28 @@ def main(
         prefix_index = 4
     else:
         prefix_index = 3
+    # Dynamically compute prefix_index from actual tokenization
+    prefix_index = len(tokenizer("### Response:\n").input_ids)
     
-    # Build hash_dict for semantic IDs (existing functionality)
-    hash_dict = dict()
-    # print(f"eos token: {tokenizer.eos_token_id}")
-    for index, ID in enumerate(prefixID):
+    # Build trie for semantic IDs
+    from model.LogitProcessor import SIDTrie
+    sid_trie = SIDTrie()
+    for ID in prefixID:
         ID.append(tokenizer.eos_token_id)
-        for i in range(prefix_index, len(ID)):
-            if i == prefix_index:
-                hash_number = get_hash(ID[:i])
-            else:
-                hash_number = get_hash(ID[prefix_index:i])
-            if hash_number not in hash_dict:
-                hash_dict[hash_number] = set()
-            hash_dict[hash_number].add(ID[i])
-        hash_number = get_hash(ID[prefix_index:])
+        sid_trie.insert(ID[prefix_index:])  # SID tokens + EOS only
 
-    # Build hash_dict_title for item titles (new functionality)
-    hash_dict_title = dict()
-    for index, ID in enumerate(prefixTitleID):
+    # Build trie for item titles
+    title_trie = SIDTrie()
+    for ID in prefixTitleID:
         ID.append(tokenizer.eos_token_id)
-        for i in range(prefix_index, len(ID)):
-            if i == prefix_index:
-                hash_number = get_hash(ID[:i])
-            else:
-                hash_number = get_hash(ID[prefix_index:i])
-            if hash_number not in hash_dict_title:
-                hash_dict_title[hash_number] = set()
-            hash_dict_title[hash_number].add(ID[i])
-        hash_number = get_hash(ID[prefix_index:])
-
-    # Convert sets to lists for both dictionaries
-    for key in hash_dict.keys():
-        hash_dict[key] = list(hash_dict[key])
-    for key in hash_dict_title.keys():
-        hash_dict_title[key] = list(hash_dict_title[key])
+        title_trie.insert(ID[prefix_index:])
 
     # Define prefix constraint functions
     def prefix_allowed_tokens_fn_semantic(batch_id, input_ids):
-        hash_number = get_hash(input_ids)
-        if hash_number in hash_dict:
-            return hash_dict[hash_number]
-        return []
-        
+        return sid_trie.get_valid_tokens(input_ids)
+
     def prefix_allowed_tokens_fn_title(batch_id, input_ids):
-        hash_number = get_hash(input_ids)
-        if hash_number in hash_dict_title:
-            return hash_dict_title[hash_number]
-        return []
+        return title_trie.get_valid_tokens(input_ids)
 
     # Default to semantic constraints (backward compatibility)
     prefix_allowed_tokens_fn = prefix_allowed_tokens_fn_semantic
@@ -174,6 +153,7 @@ def main(
             pad_token_id = model.config.pad_token_id,
             eos_token_id = model.config.eos_token_id,
             max_new_tokens = max_new_tokens,
+            return_dict_in_generate=True,
             top_k=None,
             top_p=None,
             **kwargs
@@ -183,7 +163,7 @@ def main(
             clp = ConstrainedLogitsProcessor(
                 prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
                 num_beams=num_beams,
-                base_model=base_model,
+                prefix_index=prefix_index,
                 eos_token_id=model.config.eos_token_id
             )
             logits_processor = LogitsProcessorList([clp])
@@ -192,8 +172,6 @@ def main(
                 torch.tensor(padding_encodings["input_ids"]).to(device),
                 attention_mask=torch.tensor(attention_mask).to(device),
                 generation_config=generation_config,
-                return_dict_in_generate=True,
-                output_scores=True,
                 logits_processor=logits_processor,
             )
        

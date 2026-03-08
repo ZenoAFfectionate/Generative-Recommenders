@@ -1,17 +1,19 @@
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 import numpy as np
 import pandas as pd
 import argparse
 import torch
 from torch import nn
 import torch.nn.functional as F
-import os
 import logging
 import time as Time
-from utility import pad_history,calculate_hit,extract_axis_1
+from utils.utility import pad_history,calculate_hit,extract_axis_1
 from collections import Counter
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
-from SASRecModules_ori import *
+from model.SASRecModules_ori import *
 import random
 import json
 import copy
