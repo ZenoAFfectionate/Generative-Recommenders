@@ -7,6 +7,7 @@ import os
 from transformers import GenerationConfig,  AutoTokenizer, BitsAndBytesConfig, AutoModelForCausalLM, LogitsProcessorList, TemperatureLogitsWarper
 from utils.data import  EvalD3Dataset, EvalSidDataset
 from model.LogitProcessor import ConstrainedLogitsProcessor
+from model.LogitProcessor import STATICIndex, VectorizedConstrainedLogitsProcessor
 from accelerate import Accelerator
 import random
 import bitsandbytes as bnb
@@ -93,9 +94,20 @@ def main(
     # Build trie for semantic IDs
     from model.LogitProcessor import SIDTrie
     sid_trie = SIDTrie()
+    sid_token_sequences = []  # for STATIC index
     for ID in prefixID:
         ID.append(tokenizer.eos_token_id)
         sid_trie.insert(ID[prefix_index:])  # SID tokens + EOS only
+        sid_token_sequences.append(ID[prefix_index:-1])  # SID tokens without EOS
+
+    # Build STATIC index for vectorized constrained decoding
+    static_index = STATICIndex(
+        sid_token_sequences=sid_token_sequences,
+        eos_token_id=tokenizer.eos_token_id,
+        device=torch.device(device),
+    )
+    print(f"[STATIC] Built CSR index: {len(sid_token_sequences)} items, "
+          f"SID depth={static_index.sid_len}, compact vocab={static_index.compact_vocab_size}")
 
     # Build trie for item titles
     title_trie = SIDTrie()
@@ -160,11 +172,10 @@ def main(
         )
         
         with torch.no_grad():
-            clp = ConstrainedLogitsProcessor(
-                prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+            clp = VectorizedConstrainedLogitsProcessor(
+                static_index=static_index,
                 num_beams=num_beams,
-                prefix_index=prefix_index,
-                eos_token_id=model.config.eos_token_id
+                eos_token_id=model.config.eos_token_id,
             )
             logits_processor = LogitsProcessorList([clp])
 

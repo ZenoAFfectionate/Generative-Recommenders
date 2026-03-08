@@ -59,6 +59,7 @@ from transformers import (
     )
 
 from model.LogitProcessor import ConstrainedLogitsProcessor, SIDTrie
+from model.LogitProcessor import STATICIndex, VectorizedConstrainedLogitsProcessor
 
 if is_peft_available():
     from peft import PeftConfig, get_peft_model
@@ -555,9 +556,17 @@ class ReReTrainer(Trainer):
         self._prefix_index = prefix_index
             
         self.sid_trie = SIDTrie()
+        sid_token_sequences = []  # for STATIC index
         for ID in prefixID:
             ID.append(tokenizer.eos_token_id)
             self.sid_trie.insert(ID[prefix_index:])  # SID tokens + EOS only
+            sid_token_sequences.append(ID[prefix_index:-1])  # SID tokens without EOS
+
+        # Build STATIC index for vectorized constrained decoding
+        self.static_index = STATICIndex(
+            sid_token_sequences=sid_token_sequences,
+            eos_token_id=self.processing_class.eos_token_id,
+        )
 
         self.test_generation_config = GenerationConfig(max_new_tokens=self.max_completion_length,
                                                             length_penalty=self.length_penalty,
@@ -567,12 +576,11 @@ class ReReTrainer(Trainer):
                                                             pad_token_id=self.processing_class.pad_token_id,
                                                             eos_token_id=self.processing_class.eos_token_id,)
 
-        # Create ConstrainedLogitsProcessor once; reset count before each use
-        self._constrained_lp = ConstrainedLogitsProcessor(
-            prefix_allowed_tokens_fn=self.prefix_allowed_tokens_fn,
+        # Create VectorizedConstrainedLogitsProcessor (STATIC-accelerated)
+        self._constrained_lp = VectorizedConstrainedLogitsProcessor(
+            static_index=self.static_index,
             num_beams=self.num_generations if self.beam_search else 1,
-            prefix_index=self._prefix_index,
-            eos_token_id=self.processing_class.eos_token_id
+            eos_token_id=self.processing_class.eos_token_id,
         )
 
     def prefix_allowed_tokens_fn(self, batch_id, input_ids):
@@ -675,10 +683,14 @@ class ReReTrainer(Trainer):
 
         # Reset the reusable ConstrainedLogitsProcessor for this step
         self._constrained_lp.count = 0
-        self._constrained_lp._warned = False
-        self._constrained_lp._cached_mask = None
         self.logits_processor = LogitsProcessorList([TemperatureLogitsWarper(temperature=self.temperature), self._constrained_lp])
-        self.test_lp_list = LogitsProcessorList([self._constrained_lp])
+        # Separate processor for test path to avoid count state leaking
+        self._test_lp = VectorizedConstrainedLogitsProcessor(
+            static_index=self.static_index,
+            num_beams=self.test_beam,
+            eos_token_id=self.processing_class.eos_token_id,
+        )
+        self.test_lp_list = LogitsProcessorList([self._test_lp])
 
         # Generate completions using either vLLM or regular generation
         if self.args.use_vllm:
